@@ -179,7 +179,6 @@ export default function App() {
       audioChunksRef.current = [];
 
       // --- FIX 1: ADD THIS EVENT LISTENER ---
-      // Without this, the audioChunks array stays empty
       mediaRecorderRef.current.ondataavailable = (event) => {
         if (event.data.size > 0) {
           audioChunksRef.current.push(event.data);
@@ -193,7 +192,7 @@ export default function App() {
         // Safety check
         if (audioBlob.size === 0) {
             console.error("Audio blob was empty");
-            updateStatus(deliveryId, 'unavailable');
+            updateStatus(deliveryId, 'unavailable'); // Or pending if you prefer
             return;
         }
 
@@ -202,24 +201,25 @@ export default function App() {
         try {
           const result = await processAudio(audioBlob); 
           const bookingRecord = result.delivery || extractedData;
-          // result.delivery || 
-          if (bookingRecord) {
+          
+          // Determine intent: if intent is 'reschedule' or missing essential fields,
+          // we treat it as a "Reschedule Needed" scenario but keep the card actionable.
+          const isConfirmed = bookingRecord && bookingRecord.intent === 'available';
+
+          if (isConfirmed) {
             setDeliveries(prev => prev.map(d => {
               if (d.id === deliveryId) {
                 
-                // --- FIX 2: MATCH KEYS TO YOUR API JSON ---
-                // Based on your previous message: "Street", "City", "House Number", "Time"
+                // Construct Address Dynamically
                 const addressParts = [
-                  bookingRecord['house number'], // Matches "House Number": null
-                  bookingRecord.street,          // Matches "Street": "street 08"
-                  bookingRecord.city,            // Matches "City": "Islamabad"
-                  bookingRecord.country          // Matches "Country": "Pakistan"
+                  bookingRecord['house number'], 
+                  bookingRecord.street,          
+                  bookingRecord.city,            
+                  bookingRecord.country          
                 ].filter(part => part && part !== 'null' && part !== null);
 
                 const newAddress = addressParts.length > 0 ? addressParts.join(', ') : d.address;
-                // Match Key: "Time" (Capital T)
                 const newTime = bookingRecord.time || null; 
-                // ------------------------------------------
 
                 return {
                   ...d,
@@ -232,12 +232,18 @@ export default function App() {
               return d;
             }));
           } else {
-            updateStatus(deliveryId, 'unavailable');
+            // --- CHANGE HERE: Intent was NOT 'available' (e.g. reschedule/unavailable) ---
+            // Instead of marking it as 'unavailable' (red badge, no button),
+            // we revert it to 'pending' so the user can try calling again.
+            // You can also add a toast/notification here saying "Reschedule Requested"
+            console.log("Intent was not available, reverting to pending for retry.");
+            updateStatus(deliveryId, 'pending');
           }
 
         } catch (procErr) {
           console.error("Processing flow failed", procErr);
-          updateStatus(deliveryId, 'unavailable');
+          // On error, also revert to pending to allow retry
+          updateStatus(deliveryId, 'pending');
         } finally {
           stream.getTracks().forEach(track => track.stop());
           setActiveCallId(null);
