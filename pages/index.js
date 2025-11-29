@@ -202,7 +202,7 @@ export default function App() {
         try {
           const result = await processAudio(audioBlob); 
           const bookingRecord = result.delivery || extractedData;
-
+          console.log('Bookignrecord: ', bookingRecord)
           if (bookingRecord) {
             setDeliveries(prev => prev.map(d => {
               if (d.id === deliveryId) {
