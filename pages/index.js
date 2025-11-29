@@ -169,7 +169,7 @@ export default function App() {
       setTranscription('');
       setExtractedData(null);
       setBookingResult(null);
-
+      console.log("inside startLiveCall")
       setActiveCallId(deliveryId);
       updateStatus(deliveryId, 'calling'); 
 
@@ -202,7 +202,7 @@ export default function App() {
         try {
           const result = await processAudio(audioBlob); 
           const bookingRecord = result.delivery || extractedData;
-          console.log('Bookignrecord: ', bookingRecord)
+          // result.delivery || 
           if (bookingRecord) {
             setDeliveries(prev => prev.map(d => {
               if (d.id === deliveryId) {
@@ -210,16 +210,15 @@ export default function App() {
                 // --- FIX 2: MATCH KEYS TO YOUR API JSON ---
                 // Based on your previous message: "Street", "City", "House Number", "Time"
                 const addressParts = [
-                  bookingRecord['House Number'], // Matches "House Number": null
-                  bookingRecord.Street,          // Matches "Street": "street 08"
-                  bookingRecord.City,            // Matches "City": "Islamabad"
-                  bookingRecord.Country          // Matches "Country": "Pakistan"
+                  bookingRecord['house number'], // Matches "House Number": null
+                  bookingRecord.street,          // Matches "Street": "street 08"
+                  bookingRecord.city,            // Matches "City": "Islamabad"
+                  bookingRecord.country          // Matches "Country": "Pakistan"
                 ].filter(part => part && part !== 'null' && part !== null);
 
                 const newAddress = addressParts.length > 0 ? addressParts.join(', ') : d.address;
-                console.log('NEW ADDRESS',newAddress)
                 // Match Key: "Time" (Capital T)
-                const newTime = bookingRecord.Time || null; 
+                const newTime = bookingRecord.time || null; 
                 // ------------------------------------------
 
                 return {
