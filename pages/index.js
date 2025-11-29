@@ -267,6 +267,8 @@ export default function App() {
       mediaRecorderRef.current = new MediaRecorder(stream, options);
       audioChunksRef.current = [];
 
+      // --- FIX 1: ADD THIS EVENT LISTENER ---
+      // Without this, the audioChunks array stays empty
       mediaRecorderRef.current.ondataavailable = (event) => {
         if (event.data.size > 0) audioChunksRef.current.push(event.data);
       };
@@ -278,7 +280,8 @@ export default function App() {
         console.log(`Recording stopped. Blob size: ${audioBlob.size} bytes. Type: ${mimeType}`);
 
         if (audioBlob.size === 0) {
-            updateStatus(deliveryId, 'unavailable'); 
+            console.error("Audio blob was empty");
+            updateStatus(deliveryId, 'unavailable');
             return;
         }
 
@@ -287,20 +290,26 @@ export default function App() {
         try {
           const result = await processAudio(audioBlob); 
           const bookingRecord = result.delivery || extractedData;
-          const intent = bookingRecord.intent || 'available'; 
+          // result.delivery || 
+          if (bookingRecord) {
+             // Fetch current delivery to get the fallback address
+             const { data: currentData } = await supabase
+                .from('deliveries')
+                .select('address')
+                .eq('id', deliveryId)
+                .single();
 
-          if (intent === 'available' || intent === 'confirmed') {
-             // Construct Address Dynamically
-             const houseNum = bookingRecord['house number'] || bookingRecord.houseNumber;
+             const currentAddress = currentData?.address || '';
+
              const addressParts = [
-               houseNum, 
-               bookingRecord.street,          
-               bookingRecord.city,            
-               bookingRecord.country          
-             ].filter(part => part && part !== 'null' && part !== null);
+                  bookingRecord['house number'],
+                  bookingRecord.street,
+                  bookingRecord.city,
+                  bookingRecord.country
+                ].filter(part => part && part !== 'null' && part !== null);
 
-             const fullAddress = addressParts.length > 0 ? addressParts.join(', ') : (bookingRecord.street || bookingRecord.address);
-
+             const fullAddress = addressParts.length > 0 ? addressParts.join(', ') : currentAddress;
+             
              await supabase.from('deliveries').update({
                 status: 'confirmed',
                 confirmed_address: fullAddress, 
@@ -308,12 +317,26 @@ export default function App() {
                 delivery_time: bookingRecord.time,
                 intent: bookingRecord.intent,
              }).eq('id', deliveryId);
+
+             setDeliveries(prev => prev.map(d => {
+                if (d.id === deliveryId) {
+                  return {
+                    ...d,
+                    status: 'confirmed',
+                    confirmed_address: fullAddress,
+                    city: bookingRecord.city,
+                    delivery_time: bookingRecord.time,
+                    intent: bookingRecord.intent,
+                  };
+                }
+                return d;
+             }));
           } else {
-            updateStatus(deliveryId, 'pending');
+            updateStatus(deliveryId, 'unavailable');
           }
         } catch (procErr) {
-          console.error(procErr);
-          updateStatus(deliveryId, 'pending');
+          console.error("Processing flow failed", procErr);
+          updateStatus(deliveryId, 'unavailable');
         } finally {
           stream.getTracks().forEach(track => track.stop());
           setActiveCallId(null);
@@ -548,18 +571,27 @@ export default function App() {
             <Card className="h-[600px] flex flex-col overflow-hidden shadow-lg border-blue-100">
               <div className="flex-1 bg-white p-4 overflow-y-auto" ref={scrollRef}>
                 
-                <h1 className={`${styles.title} text-center mb-4`}>Speech-to-Booking Console</h1>
-                <p className={`${styles.description} mb-6 text-center text-sm text-slate-500`}>
+                <h1 className="text-2xl font-bold text-slate-800 text-center mb-2">Speech-to-Booking Console</h1>
+                <p className="mb-6 text-center text-sm text-slate-500">
                   Use this console to test the AI directly, or use the {`"Call Now"`} buttons on the left.
                 </p>
 
-                <div className={`${styles.controls} flex justify-center mb-4`}>
+                <div className="flex justify-center mb-6">
                   {!isRecording || activeCallId ? (
-                    <button onClick={startRecording} disabled={isRecording || isProcessing} className={styles.startButton}>
-                      Test AI Recording
+                    <button 
+                      onClick={startRecording} 
+                      disabled={isRecording || isProcessing} 
+                      className="px-6 py-3 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-full shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                    >
+                      <Smartphone className="w-5 h-5" /> Test AI Recording
                     </button>
                   ) : (
-                    <button onClick={stopRecording} className={styles.stopButton}>Stop Test</button>
+                    <button 
+                      onClick={stopRecording} 
+                      className="px-6 py-3 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-full shadow-md transition-all flex items-center gap-2"
+                    >
+                      <Pause className="w-5 h-5" /> Stop Test
+                    </button>
                   )}
                 </div>
 
