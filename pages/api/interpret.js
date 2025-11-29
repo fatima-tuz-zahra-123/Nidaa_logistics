@@ -57,7 +57,13 @@ export default async function handler(req, res) {
     }
 
     // Construct prompt for Groq Llama
-    const systemPrompt = `You are an expert appointment booking assistant. Extract structured appointment information from user speech with high accuracy.
+    const systemPrompt = `You are an expert delivery coordination assistant. Extract structured delivery information from customer speech with high accuracy, including:
+          - Whether the customer is available to receive the parcel
+          - The delivery location
+          - The preferred time slot for delivery
+          - Any additional instructions or notes
+          - Intent: confirm, reschedule, unavailable, or inquiry
+          - Provide a confidence score based on clarity and completeness.
 
 Current Date Context:
 - Today is ${formattedDate} (${dayOfWeek})
@@ -75,10 +81,13 @@ Instructions:
    - "morning" → "09:00"
    - "afternoon" → "14:00"
    - "evening" → "18:00"
-4. Extract doctor name (e.g., "Dr. Smith", "Dr. Johnson")
-5. Extract medical specialty if mentioned (e.g., "cardiologist", "dentist")
-6. Determine intent: "book" (default for appointments), "reschedule", "cancel", or "inquiry"
-7. Provide confidence score based on information completeness:
+4. Extract the location (eg; 350 Madison Avenue New York USA)
+5. Extract the country from the location (eg, USA)
+6. Extract the city from the location (eg, New York)
+7. Extract the street from the location (eg, Madison Avenue)
+8. Extract the House Number from the location (eg, 350)
+9. Determine intent: "available" (default for appointments), "reschedule", "cancel", or "unavailable"
+10. Provide confidence score based on information completeness:
    - 0.9-1.0: All fields present and clear
    - 0.7-0.9: Most fields present
    - 0.5-0.7: Some ambiguity
@@ -88,11 +97,13 @@ CRITICAL: You MUST respond with ONLY valid JSON. No explanations, no markdown, j
 
 Required JSON structure:
 {
-  "doctor": "string or null",
-  "speciality": "string or null",
+  "country": "string or null",
+  "city": "string or null",
+  "street": "string or null",
+  "house number": "string or null",
   "date": "YYYY-MM-DD or null",
   "time": "HH:MM or null",
-  "intent": "book|reschedule|cancel|inquiry",
+  "intent": "available|unavailable|reschedule|cancel",
   "confidence": 0.0-1.0
 }`;
 
@@ -135,7 +146,7 @@ Required JSON structure:
     try {
       // Remove markdown code blocks if present
       const jsonMatch = aiResponse.match(/```json\s*([\s\S]*?)\s*```/) || 
-                       aiResponse.match(/```\s*([\s\S]*?)\s*```/);
+                      aiResponse.match(/```\s*([\s\S]*?)\s*```/);
       const jsonString = jsonMatch ? jsonMatch[1] : aiResponse;
       
       extractedData = JSON.parse(jsonString.trim());
@@ -152,15 +163,17 @@ Required JSON structure:
 
     // Validate and normalize fields
     const validatedData = {
-      doctor: extractedData.doctor || null,
-      speciality: extractedData.speciality || extractedData.specialty || null,
+      country: extractedData.country || null,
+      city: extractedData.city || null,
+      street: extractedData.street || null,
+      houseNumber: extractedData['house number'] || null,
       date: extractedData.date || null,
       time: extractedData.time || null,
-      intent: extractedData.intent || 'book',
+      intent: extractedData.intent || 'available',
       confidence: typeof extractedData.confidence === 'number' ? extractedData.confidence : 0.5,
     };
 
-    console.log('Extracted appointment data:', validatedData);
+    console.log('Extracted delivery data:', validatedData);
 
     return res.status(200).json(validatedData);
 
