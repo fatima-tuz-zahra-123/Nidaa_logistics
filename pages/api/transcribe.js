@@ -70,9 +70,15 @@ export default async function handler(req, res) {
         // Log stream errors
         fileStream.on('error', (err) => console.error('❌ File Read Stream Error:', err));
 
+        // Determine correct content-type and filename based on input
+        const inputMime = audioFile.mimetype || 'audio/mp4';
+        const inputName = audioFile.originalFilename || 'audio.mp4';
+        
+        console.log(`Using for Groq: Mime=${inputMime}, Name=${inputName}`);
+
         formData.append('file', fileStream, {
-        filename: audioFile.originalFilename || 'audio.webm',
-        contentType: audioFile.mimetype || 'audio/webm',
+          filename: inputName,
+          contentType: inputMime,
         });
         formData.append('model', 'whisper-large-v3');
         formData.append('language', 'en'); 
