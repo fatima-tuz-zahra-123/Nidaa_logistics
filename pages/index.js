@@ -13,7 +13,7 @@ import {
   Play, 
   Pause, 
   Smartphone, 
-  Activity,
+  Truck,
   LogOut 
 } from 'lucide-react';
 
@@ -453,7 +453,7 @@ export default function App() {
       <header className="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-            <Activity className="text-blue-600" />
+            <Truck className="text-blue-600" />
             AutoDispatch AI
           </h1>
           <p className="text-slate-500 text-sm mt-1">Supabase Connected System</p>

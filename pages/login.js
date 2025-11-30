@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { supabase } from '../utils/supabaseClient'
 import { useRouter } from 'next/router'
-import { Activity, Loader2, AlertCircle, CheckCircle } from 'lucide-react'
+import { Loader2, AlertCircle, CheckCircle, Truck } from 'lucide-react'
 
 export default function Login() {
   const [isSignUp, setIsSignUp] = useState(false)
@@ -60,7 +60,7 @@ export default function Login() {
       <div className="w-full max-w-md bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden">
         <div className="bg-white p-8 pb-0 text-center">
           <div className="flex justify-center mb-4">
-            <div className="p-3 bg-blue-50 rounded-full"><Activity className="w-8 h-8 text-blue-600" /></div>
+            <div className="p-3 bg-blue-50 rounded-full"><Truck className="w-8 h-8 text-blue-600" /></div>
           </div>
           <h1 className="text-2xl font-bold text-gray-900">{isSignUp ? 'Create Account' : 'Welcome Back'}</h1>
           <p className="text-gray-500 mt-2 text-sm">{isSignUp ? 'Join the AutoDispatch team' : 'Login to access dashboard'}</p>
