@@ -14,9 +14,10 @@ import {
   Pause, 
   Smartphone, 
   Truck,
-  LogOut 
+  LogOut,
+  RotateCcw
 } from 'lucide-react';
-
+const currentDate = new Date().toISOString();
 // --- COMPONENTS ---
 const Card = ({ children, className = "" }) => (
   <div className={`bg-white rounded-xl border border-gray-200 shadow-sm ${className}`}>
@@ -132,17 +133,10 @@ export default function App() {
     const initAudio = async () => {
       if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
         try {
-          // First get permission
           await navigator.mediaDevices.getUserMedia({ audio: true });
-          console.log('Microphone access granted');
-          
-          // Then enumerate devices
           const devices = await navigator.mediaDevices.enumerateDevices();
           const audioInputs = devices.filter(device => device.kind === 'audioinput');
           
-          console.log("Available Audio Inputs:", audioInputs.map(d => `${d.label} (${d.deviceId})`));
-
-          // Try to find a "Built-in" or "Internal" microphone, avoiding "Boom" or "Virtual"
           const bestDevice = audioInputs.find(d => {
             const label = d.label.toLowerCase();
             return (label.includes('built-in') || label.includes('internal') || label.includes('macbook')) && 
@@ -150,13 +144,10 @@ export default function App() {
           });
 
           if (bestDevice) {
-            console.log("Selected Best Device:", bestDevice.label);
             setSelectedDeviceId(bestDevice.deviceId);
           } else if (audioInputs.length > 0) {
-             // Fallback: pick the first one that isn't Boom if possible
              const nonBoom = audioInputs.find(d => !d.label.toLowerCase().includes('boom'));
              if (nonBoom) {
-                console.log("Selected Non-Boom Device:", nonBoom.label);
                 setSelectedDeviceId(nonBoom.deviceId);
              }
           }
@@ -182,11 +173,9 @@ export default function App() {
     ];
     for (const type of types) {
       if (MediaRecorder.isTypeSupported(type)) {
-        console.log(`Using MIME type: ${type}`);
         return type;
       }
     }
-    console.warn('No supported MIME type found, letting browser default');
     return ''; 
   };
 
@@ -200,15 +189,12 @@ export default function App() {
 
     try {
       const formData = new FormData();
-      // Determine extension based on mimeType
       const mimeType = mimeTypeRef.current || 'audio/webm';
-      // Use .mp4 for mp4 audio to ensure compatibility
       const extension = mimeType.includes('mp4') ? 'mp4' : 
                         mimeType.includes('wav') ? 'wav' : 
                         mimeType.includes('ogg') ? 'ogg' : 
                         mimeType.includes('aac') ? 'aac' : 'webm';
       
-      console.log(`Processing audio: Type=${mimeType}, Ext=${extension}, Size=${audioBlob.size}`);
       formData.append('audio', audioBlob, `recording.${extension}`); 
 
       const transcribeResponse = await axios.post('/api/transcribe', formData);
@@ -248,27 +234,13 @@ export default function App() {
       };
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
       
-      console.log("Microphone stream obtained:", stream.id);
-      
-      // Check for virtual audio drivers which might be silent
-      const tracks = stream.getAudioTracks();
-      tracks.forEach(track => {
-        console.log(`Track: ${track.label}, State: ${track.readyState}`);
-        if (track.label.toLowerCase().includes('boom') || track.label.toLowerCase().includes('virtual')) {
-           console.warn("WARNING: Virtual Audio Driver detected. This may record silence.");
-        }
-      });
-
       const mimeType = getSupportedMimeType();
       mimeTypeRef.current = mimeType;
-      // Remove complex constraints to ensure compatibility
       const options = mimeType ? { mimeType } : undefined;
       
       mediaRecorderRef.current = new MediaRecorder(stream, options);
       audioChunksRef.current = [];
 
-      // --- FIX 1: ADD THIS EVENT LISTENER ---
-      // Without this, the audioChunks array stays empty
       mediaRecorderRef.current.ondataavailable = (event) => {
         if (event.data.size > 0) audioChunksRef.current.push(event.data);
       };
@@ -277,10 +249,7 @@ export default function App() {
         const mimeType = mimeTypeRef.current || 'audio/webm';
         const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
         
-        console.log(`Recording stopped. Blob size: ${audioBlob.size} bytes. Type: ${mimeType}`);
-
         if (audioBlob.size === 0) {
-            console.error("Audio blob was empty");
             updateStatus(deliveryId, 'unavailable');
             return;
         }
@@ -290,9 +259,8 @@ export default function App() {
         try {
           const result = await processAudio(audioBlob); 
           const bookingRecord = result.delivery || extractedData;
-          // result.delivery || 
+          
           if (bookingRecord) {
-             // Fetch current delivery to get the fallback address
              const { data: currentData } = await supabase
                 .from('deliveries')
                 .select('address')
@@ -301,6 +269,7 @@ export default function App() {
 
              const currentAddress = currentData?.address || '';
 
+             // 1. CONSTRUCT CLEAN ADDRESS
              const addressParts = [
                   bookingRecord['house number'],
                   bookingRecord.street,
@@ -310,14 +279,21 @@ export default function App() {
 
              const fullAddress = addressParts.length > 0 ? addressParts.join(', ') : currentAddress;
              
+             // 2. CREATE GOOGLE MAPS LINK (NEW LOGIC)
+             const mapQuery = encodeURIComponent(fullAddress);
+             const mapLink = `https://www.google.com/maps/search/?api=1&query=${mapQuery}`;
+             
+             // 3. UPDATE DATABASE
              await supabase.from('deliveries').update({
                 status: 'confirmed',
                 confirmed_address: fullAddress, 
                 city: bookingRecord.city,
                 delivery_time: bookingRecord.time,
                 intent: bookingRecord.intent,
+                map_link: mapLink, // <-- PUSH LINK TO DB
              }).eq('id', deliveryId);
-
+             
+             // 4. UPDATE LOCAL STATE (Triggering Re-render)
              setDeliveries(prev => prev.map(d => {
                 if (d.id === deliveryId) {
                   return {
@@ -326,7 +302,9 @@ export default function App() {
                     confirmed_address: fullAddress,
                     city: bookingRecord.city,
                     delivery_time: bookingRecord.time,
+                    map_link: mapLink, // <-- PUSH LINK TO LOCAL STATE
                     intent: bookingRecord.intent,
+                    date: bookingRecord.date
                   };
                 }
                 return d;
@@ -335,7 +313,6 @@ export default function App() {
             updateStatus(deliveryId, 'unavailable');
           }
         } catch (procErr) {
-          console.error("Processing flow failed", procErr);
           updateStatus(deliveryId, 'unavailable');
         } finally {
           stream.getTracks().forEach(track => track.stop());
@@ -344,7 +321,7 @@ export default function App() {
         }
       };
 
-      mediaRecorderRef.current.start(); // Revert to standard start for better compatibility
+      mediaRecorderRef.current.start();
       setIsRecording(true);
 
       } catch (err) {
@@ -388,11 +365,8 @@ export default function App() {
         const mimeType = mimeTypeRef.current || 'audio/webm';
         const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
         
-        console.log(`Recording stopped. Blob size: ${audioBlob.size} bytes. Type: ${mimeType}`);
-
         if (audioBlob.size < 1000) {
             console.warn("Audio blob too small, likely silence or error.");
-            // Don't return here, let it try to process, but warn
         }
 
         await processAudio(audioBlob);
@@ -412,6 +386,32 @@ export default function App() {
       setIsRecording(false);
     }
   }, [isRecording]);
+
+  // --- NEW: RESET ALL STATUSES FUNCTION ---
+  const resetAllStatuses = async () => {
+    if (activeCallId !== null) {
+      alert("Please wait for the current call to finish before resetting the queue.");
+      return;
+    }
+    
+    // Safety check (using window.confirm as custom modals aren't built here)
+    if (window.confirm("Are you sure you want to reset ALL confirmed and failed delivery statuses back to 'Pending'?")) {
+      setIsAutoDialerOn(false); // Stop the dialer immediately
+
+      const { error } = await supabase
+        .from('deliveries')
+        .update({ status: 'pending' })
+        .neq('status', 'pending'); // Only update non-pending statuses (more efficient)
+
+      if (error) {
+        setError("Failed to reset queue: " + error.message);
+        console.error("Supabase Reset Error:", error);
+      } else {
+        // Trigger a re-fetch to update the UI
+        fetchDeliveries(); 
+      }
+    }
+  };
 
   // Auto-dialer
   useEffect(() => {
@@ -460,6 +460,15 @@ export default function App() {
         </div>
 
         <div className="flex gap-3">
+          {/* NEW RESET BUTTON */}
+          <button 
+             onClick={resetAllStatuses} 
+             disabled={activeCallId !== null}
+             className="flex items-center gap-2 px-4 py-2 bg-yellow-100 border border-yellow-300 text-yellow-700 rounded-lg hover:bg-yellow-200 text-sm font-medium disabled:opacity-50"
+          >
+            <RotateCcw className="w-4 h-4" /> Reset All
+          </button>
+          
           {/* UPDATED LOGOUT BUTTON */}
           <button 
              onClick={async () => { await supabase.auth.signOut(); router.push('/login'); }} 
@@ -522,12 +531,28 @@ export default function App() {
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-1">
                     <h3 className="font-semibold text-slate-900">{delivery.customer_name}</h3>
+                    {/* ADDED DATE DISPLAY HERE */}
+                    <span className="text-slate-500 text-xs font-medium">
+                      (Date: {((delivery.date !== null && delivery.date !== undefined && delivery.date !== '') ? delivery.date : new Date().toLocaleDateString())})
+                    </span>
                     <span className="text-slate-400 text-xs">• {delivery.id}</span>
                   </div>
+                  
+                  {/* ADDRESS DISPLAY WITH GOOGLE MAPS LINK */}
                   <div className="flex items-center gap-2 text-sm text-slate-600 mb-1">
-                    <MapPin className="w-4 h-4 text-slate-400" />
-                    {delivery.status === 'confirmed' ? (delivery.confirmed_address || delivery.address) : delivery.address}
+                    {delivery.map_link ? (
+                      <a href={delivery.map_link} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800 flex items-center gap-1">
+                        <MapPin className="w-4 h-4 text-blue-400" />
+                        {delivery.confirmed_address || delivery.address}
+                      </a>
+                    ) : (
+                      <div className="flex items-center gap-1">
+                        <MapPin className="w-4 h-4 text-slate-400" />
+                        {delivery.address}
+                      </div>
+                    )}
                   </div>
+
                   <div className="flex items-center gap-2 text-sm text-slate-600">
                     <Smartphone className="w-4 h-4 text-slate-400" />
                     {delivery.phone_number}

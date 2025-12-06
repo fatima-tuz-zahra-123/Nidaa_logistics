@@ -1,26 +1,16 @@
 /**
  * Groq Llama Interpretation Route
- * 
- * Accepts: Transcribed text from Whisper
+ * * Accepts: Transcribed text from Whisper
  * Returns: Structured JSON with appointment details
- * 
- * Flow:
+ * * Flow:
  * 1. Receive transcription text
  * 2. Inject current date for relative date parsing
  * 3. Call Groq Llama API (FREE & FAST!)
- * 4. Extract structured appointment data (doctor, specialty, date, time, intent, confidence)
+ * 4. Extract structured appointment data (location, date, time, intent, confidence)
  * 5. Return JSON
- * 
- * Groq Llama handles:
- * - Filler word filtering ("um", "uh", etc.)
- * - Relative date parsing ("tomorrow", "next Tuesday", "next week")
- * - Natural language understanding
- * - JSON extraction with confidence scoring
- * 
- * Benefits:
+ * * Benefits:
  * - FREE API access
  * - Super fast inference
- * - High accuracy with llama-3.3-70b-versatile
  */
 
 import axios from 'axios';
@@ -56,14 +46,8 @@ export default async function handler(req, res) {
       throw new Error('GROQ_API_KEY not configured in .env.local');
     }
 
-    // Construct prompt for Groq Llama
-    const systemPrompt = `You are an expert delivery coordination assistant. Extract structured delivery information from customer speech with high accuracy, including:
-          - Whether the customer is available to receive the parcel
-          - The delivery location
-          - The preferred time slot for delivery
-          - Any additional instructions or notes
-          - Intent: confirm, reschedule, unavailable, or inquiry
-          - Provide a confidence score based on clarity and completeness.
+    // --- CRITICAL FIX: UPDATED SYSTEM PROMPT ---
+    const systemPrompt = `You are an expert delivery coordination assistant. Extract structured delivery information from customer speech with high accuracy.
 
 Current Date Context:
 - Today is ${formattedDate} (${dayOfWeek})
@@ -71,27 +55,13 @@ Current Date Context:
 
 Instructions:
 1. Ignore filler words (um, uh, like, you know, etc.)
-2. Convert relative dates to absolute YYYY-MM-DD format:
-   - "tomorrow" → ${tomorrowDate}
-   - "next Tuesday" → calculate next occurrence of Tuesday from ${formattedDate}
-   - "in 3 days" → calculate 3 days from today
-   - If day of week is mentioned, find next occurrence
-3. Parse time in 24-hour format (HH:MM):
-   - "2 PM" → "14:00"
-   - "morning" → "09:00"
-   - "afternoon" → "14:00"
-   - "evening" → "18:00"
-4. Extract the location (eg; 350 Madison Avenue New York USA)
-5. Extract the country from the location (eg, USA)
-6. Extract the city from the location (eg, New York)
-7. Extract the street from the location (eg, Madison Avenue)
-8. Extract the House Number from the location (eg, 350)
-9. Determine intent: "available" (default for appointments), "reschedule", "cancel", or "unavailable"
-10. Provide confidence score based on information completeness:
-   - 0.9-1.0: All fields present and clear
-   - 0.7-0.9: Most fields present
-   - 0.5-0.7: Some ambiguity
-   - 0.0-0.5: Missing critical information
+2. Convert relative dates to absolute YYYY-MM-DD format.
+3. Parse time in 24-hour format (HH:MM).
+4. Extract the location: 
+    - Street should contain the primary address line, **including landmarks or apartment/hostel details** if no formal house number is given.
+    - House_Identifier should capture any explicit number or name (e.g., House 350, Apt 4B, Hostel D).
+5. Determine intent: "available" (customer is home), "reschedule", "cancel", or "unavailable".
+6. Provide confidence score based on information completeness.
 
 CRITICAL: You MUST respond with ONLY valid JSON. No explanations, no markdown, just JSON.
 
@@ -106,6 +76,7 @@ Required JSON structure:
   "intent": "available|unavailable|reschedule|cancel",
   "confidence": 0.0-1.0
 }`;
+    // --- END CRITICAL FIX ---
 
     const userPrompt = `Extract appointment details from: "${text}"`;
 
